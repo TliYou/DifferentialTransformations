@@ -33,120 +33,136 @@ from casadi import *
 import os
    
 def run_Ex1(with_plots=True):
-
+ 
 #    os.chdir("C:\JModelica.org-SDK-1.8.1\install\Python\pyjmi\examples")
     curr_dir = os.path.dirname(os.path.abspath(__file__));
-    casadi_name = compile_fmux("OPT.Ex1_Opt",(curr_dir+"/OPT.mop",curr_dir+"/OPT_Ctl_DT.mo"))
+    par_dir = os.path.split(curr_dir)[0]
+    mo_dir = par_dir+"/Models/Ex1"
+    runDT(mo_dir)
+
+def runDT(mo_dir):    
+    casadi_name = compile_fmux("OPT.Ex1_Opt",(mo_dir+"/OPT.mop",mo_dir+"/OPT_Ctl_DT.mo"))  
     tmpdir = unzip_unit(casadi_name)
     fmux_files = get_files_in_archive(tmpdir)
     xmlFile = fmux_files['model_desc']
 #    #xmldoc = xmlparser.ModelDescription(xmlFile)
-    
+#     
     ocp = casadi.SymbolicOCP()
     options = {}
     options["verbose"] = True
     options["sort_equations"] = False
     options["eliminate_dependent"] = False
     ocp.parseFMI(xmlFile,options)
-#    
-#    
+# #    
+# #    
     print ocp.ode
+    print ocp.u
+    print ocp.x
+    print ocp.y
     
+    # Get size of input and state
+    num_inp = ocp.u.size()
+    num_state = ocp.x.size() - 1 # Exclude cost from the state
+     
     # Get RHS of ode
     ode_rhs = SXMatrix(casadi.der(ocp.x)) - ocp.ode
     simplify(ode_rhs)
-    print ode_rhs
+    cost = ode_rhs[0]
+    f = ode_rhs[1:num_state + 1]
     
-    dLdu = casadi.jacobian(ode_rhs[0],SXMatrix(casadi.var(ocp.u)))
-    simplify(dLdu)
-    print dLdu
-    
-    dfdu = casadi.jacobian(ode_rhs[1:ocp.ode.size()],SXMatrix(casadi.var(ocp.u)))
+#   Derivative of cost w.r.t inputs  
+    derCost_derU = casadi.jacobian(cost,SXMatrix(casadi.var(ocp.u)))
+    simplify(derCost_derU)
+    print derCost_derU
+
+#   Derivative of system dynamics w.r.t inputs     
+    dfdu = casadi.jacobian(f,SXMatrix(casadi.var(ocp.u)))
     simplify(dfdu)
     print dfdu
-    
-    Cu = ssym('Cu',ocp.x.size()-1,degree+1) # single input
-    x = SXMatrix.ones(ocp.x.size()-1,degree+1)
-    x[:,0] = SXMatrix.ones(ocp.x.size()-1)
-    x[:,1] = SXMatrix(casadi.var(ocp.x[1:ocp.x.size()]))
-    for i in range(2,degree+1):
-        x[:,i] = pow(x[:,1],i)
-    print x
-
-    u_x = mul(Cu,x.T)
-    print u_x
-    dLdu = casadi.substitute(dLdu,SXMatrix(casadi.var(ocp.u)),u_x)
-    print dLdu
-    
-    dU = DT_coeffs(dLdu,SXMatrix(casadi.var(ocp.x[1:ocp.x.size()])))
-    print dU
-    
-    V = ssym('V',ocp.x.size()-1,degree+1)
-    V_x = mul(V,x.T)
-    dV_dx = jacobian(V_x,x[:,1])
-    print dV_dx
-    dVdx = DT_coeffs(dV_dx,x[:,1])
-    print dVdx*dfdu
-#    dVdx = ssym('dVdx',ocp.x.size()-1,degree+1)
-#    dVdx[ocp.x.size()] = SX(0)
-
-    
-    expr1 = dU + dVdx.T*dfdu #'''dHdu = 0 is the first algebraic difference equation'''
-#    print expr1
-    
-    Lag = substitute(ode_rhs[0],SXMatrix(casadi.var(ocp.u)),u_x)
-    L = DT_coeffs(Lag,SXMatrix(casadi.var(ocp.x[1:ocp.x.size()])))
-#    print L
-    
-    fun = substitute(ode_rhs[1:ocp.ode.size()],SXMatrix(casadi.var(ocp.u)),u_x)
-    f = DT_coeffs(fun,SXMatrix(casadi.var(ocp.x[1:ocp.x.size()])))
-#    print f
-
-    expr2 = L + dVdx.T*f
-#    print expr2
-#    
-    global dVdx, Cu, ocp
-    return expr1, expr2
-    
-    
-def F(x):
-    global expr11,expr22,dVdx,Cu
-    x1 = x[0]
-    z1 = casadi.substitute(expr11,Cu,SXMatrix([x1[0:3]]))
-    y1 = casadi.substitute(z1,dVdx,SXMatrix([x1[3:6]]))
-    
-    z2 = casadi.substitute(expr22,Cu,SXMatrix([x1[0:3]]))
-    y2 = casadi.substitute(z2,dVdx,SXMatrix([x1[3:6]]))
-    
-    return [double(y1),double(y2)]
-    
-    
-def DT_coeffs(f,x):
-# 1D DT of a scalar function f about the scalar variable x
-    global degree, H
-    X = ssym('X',degree+1);
-    f1 = f
-    X[0] = f1#casadi.jacobian(f1,pow(x,0))
-    for i in range(1, degree+1):
-        f1 = casadi.jacobian(f1,x)
-        X[i] = pow(H,i)/math.factorial(i)*f1
-        
-    return X 
-        
+#     
+#     Cu = ssym('Cu',ocp.x.size()-1,degree+1) # single input
+#     x = SXMatrix.ones(ocp.x.size()-1,degree+1)
+#     x[:,0] = SXMatrix.ones(ocp.x.size()-1)
+#     x[:,1] = SXMatrix(casadi.var(ocp.x[1:ocp.x.size()]))
+#     for i in range(2,degree+1):
+#         x[:,i] = pow(x[:,1],i)
+#     print x
+# 
+#     u_x = mul(Cu,x.T)
+#     print u_x
+#     dLdu = casadi.substitute(dLdu,SXMatrix(casadi.var(ocp.u)),u_x)
+#     print dLdu
+#     
+#     dU = DT_coeffs(dLdu,SXMatrix(casadi.var(ocp.x[1:ocp.x.size()])))
+#     print dU
+#     
+#     V = ssym('V',ocp.x.size()-1,degree+1)
+#     V_x = mul(V,x.T)
+#     dV_dx = jacobian(V_x,x[:,1])
+#     print dV_dx
+#     dVdx = DT_coeffs(dV_dx,x[:,1])
+#     print dVdx*dfdu
+# #    dVdx = ssym('dVdx',ocp.x.size()-1,degree+1)
+# #    dVdx[ocp.x.size()] = SX(0)
+# 
+#     
+#     expr1 = dU + dVdx.T*dfdu #'''dHdu = 0 is the first algebraic difference equation'''
+# #    print expr1
+#     
+#     Lag = substitute(ode_rhs[0],SXMatrix(casadi.var(ocp.u)),u_x)
+#     L = DT_coeffs(Lag,SXMatrix(casadi.var(ocp.x[1:ocp.x.size()])))
+# #    print L
+#     
+#     fun = substitute(ode_rhs[1:ocp.ode.size()],SXMatrix(casadi.var(ocp.u)),u_x)
+#     f = DT_coeffs(fun,SXMatrix(casadi.var(ocp.x[1:ocp.x.size()])))
+# #    print f
+# 
+#     expr2 = L + dVdx.T*f
+# #    print expr2
+# #    
+#     global dVdx, Cu, ocp
+#     return expr1, expr2
+#     
+#     
+# def F(x):
+#     global expr11,expr22,dVdx,Cu
+#     x1 = x[0]
+#     z1 = casadi.substitute(expr11,Cu,SXMatrix([x1[0:3]]))
+#     y1 = casadi.substitute(z1,dVdx,SXMatrix([x1[3:6]]))
+#     
+#     z2 = casadi.substitute(expr22,Cu,SXMatrix([x1[0:3]]))
+#     y2 = casadi.substitute(z2,dVdx,SXMatrix([x1[3:6]]))
+#     
+#     return [double(y1),double(y2)]
+#     
+#     
+# def DT_coeffs(f,x):
+# # 1D DT of a scalar function f about the scalar variable x
+#     global degree, H
+#     X = ssym('X',degree+1);
+#     f1 = f
+#     X[0] = f1#casadi.jacobian(f1,pow(x,0))
+#     for i in range(1, degree+1):
+#         f1 = casadi.jacobian(f1,x)
+#         X[i] = pow(H,i)/math.factorial(i)*f1
+#         
+#     return X 
+#         
 if __name__ == '__main__':
-    global degree, H, z, dVdx, expr11, expr22, ocp
-    degree = 2
-    H = 1.0
-    expr1, expr2 = run_Ex1()
-#    expr11 = casadi.substitute(expr1,SXMatrix(casadi.var(ocp.x[1:ocp.x.size()])),SXMatrix.zeros(ocp.x.size()-1,1))
-#    expr22 = casadi.substitute(expr2,SXMatrix(casadi.var(ocp.x[1:ocp.x.size()])),SXMatrix.zeros(ocp.x.size()-1,1))
-##    print F([[1,1,1,1,1,1]])
-#    
-#    print expr11
-#    print expr22
-#    
-#    
-##    z = run_Ex1()
-#    x = scipy.optimize.root(F,[[1,1,1,1,1,1]], method='krylov', options={'disp': True})
-##    x = scipy.optimize.broyden1(F, [[1,1,1,1,1,1]], f_tol=1e-14)
-    print x
+#     global degree, H, z, dVdx, expr11, expr22, ocp
+#     degree = 2
+#     H = 1.0
+#     expr1, expr2 = run_Ex1()
+# #    expr11 = casadi.substitute(expr1,SXMatrix(casadi.var(ocp.x[1:ocp.x.size()])),SXMatrix.zeros(ocp.x.size()-1,1))
+# #    expr22 = casadi.substitute(expr2,SXMatrix(casadi.var(ocp.x[1:ocp.x.size()])),SXMatrix.zeros(ocp.x.size()-1,1))
+# ##    print F([[1,1,1,1,1,1]])
+# #    
+# #    print expr11
+# #    print expr22
+# #    
+# #    
+# ##    z = run_Ex1()
+# #    x = scipy.optimize.root(F,[[1,1,1,1,1,1]], method='krylov', options={'disp': True})
+# ##    x = scipy.optimize.broyden1(F, [[1,1,1,1,1,1]], f_tol=1e-14)
+    run_Ex1()
+    print 0

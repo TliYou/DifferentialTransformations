@@ -1,0 +1,10 @@
+package OPT
+  optimization Ex1_Opt (objective = cost(finalTime))
+   extends Opt_Ctl_DT.Ex_1(x(fixed=true));
+   Real cost(start=0,fixed=true);
+
+  equation
+    der(cost) = x^2 + x^4 + u^2;
+  end Ex1_Opt;
+  
+end OPT;
